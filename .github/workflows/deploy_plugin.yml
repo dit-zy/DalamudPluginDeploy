@@ -42,7 +42,12 @@ on:
       open_pr:
         required: false
         type: boolean
-        description: 'open pull request'
+        description: 'open pull request?'
+        default: false
+      force_push:
+        required: false
+        type: boolean
+        description: 'force push the version change commit?'
         default: false
     secrets:
       DEPLOY_TOKEN:
@@ -63,6 +68,7 @@ jobs:
       GITHUB_USERNAME: ${{ inputs.github_username }}
       GITHUB_EMAIL: ${{ inputs.github_email }}
       OPEN_PR: ${{ inputs.open_pr }}
+      FORCE_PUSH: ${{ inputs.force_push }}
       CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
     steps:
     - name: validate inputs
@@ -128,7 +134,12 @@ jobs:
 
     - name: Push .csproj Version Changes
       run: |
-        git push origin HEAD:${{ github.ref_name }}
+        ref="HEAD:${{ github.ref_name }}"
+        if [[ $FORCE_PUSH == true ]]; then
+          echo "force pushing: $ref"
+          ref="+$ref"
+        fi
+        git push origin "$ref"
         echo "Pushed .csproj version changes to the repository."
 
     - name: Tag release
