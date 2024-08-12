@@ -99,7 +99,6 @@ jobs:
 
     - name: Determine Version
       if: inputs.version_change != 'none'
-      shell: 'bash -ex {0}'
       run: |
         current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
         version_components=($(echo "$current_version" | tr . ' '))
