@@ -100,7 +100,8 @@ jobs:
     - name: Determine Version
       if: inputs.version_change != 'none'
       run: |
-        version_components=("$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH" | tr . ' ')")
+        current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
+        version_components=("$current_version | tr . ' ')")
         component_order=(major minor patch)
         for i in $(seq 3 -1 0); do
           [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]] && this_component=true || this_component=false
@@ -110,12 +111,13 @@ jobs:
         
         new_version=`echo ${version_components[@]} | tr ' ' .`
         echo "VERSION=$new_version" >> $GITHUB_ENV
+        echo "CURRENT_VERSION=$current_version" >> $GITHUB_ENV
         echo "new version computed as: $new_version"
 
     - name: Update .csproj Version
       run: |
         sed -i "s:<Version>[^<]*</Version>:<Version>$VERSION</Version>:" "$CSPROJ_PATH"
-        echo "Updated .csproj version at $CSPROJ_PATH from $current_version to $version"
+        echo "Updated .csproj version at $CSPROJ_PATH from $CURRENT_VERSION to $VERSION"
 
     - name: Commit .csproj Changes
       run: |
