@@ -19,14 +19,18 @@ on:
         required: true
         type: string
         description: 'csproj file name'
-      version:
+      owners:
         required: true
         type: string
-        description: 'version of plugin to deploy'
+        description: 'the plugin owners, comma separated'
+      version_change:
+        required: true
+        type: string
+        description: 'which version component is being incremented (MAJOR, MINOR, PATCH, or NONE)'
       deployment_type:
         required: true
         type: string
-        description: 'stable or testing/live'
+        description: 'stable or testing'
       github_username:
         required: true
         type: string
@@ -37,9 +41,9 @@ on:
         description: 'GitHub email for commits'
       open_pr:
         required: false
-        default: false
         type: boolean
         description: 'open pull request'
+        default: false
     secrets:
       DEPLOY_TOKEN:
         required: true
@@ -47,154 +51,173 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ inputs.deployment_type == 'stable' || startsWith(inputs.deployment_type, 'testing/') }}
+    if: ${{ inputs.deployment_type == 'stable' || inputs.deployment_type == 'testing' }}
     env:
-      DEPLOYMENT_TYPE: ${{ inputs.deployment_type }}
       PUBLIC_NAME: ${{ inputs.public_name }}
       INTERNAL_NAME: ${{ inputs.internal_name }}
       PROJECT_DIR: ${{ inputs.project_dir }}
       PROJECT_NAME: ${{ inputs.project_name }}
-      VERSION: ${{ inputs.version }}
+      OWNERS: ${{ inputs.owners }}
+      VERSION_CHANGE: ${{ inputs.version_change }}
+      DEPLOYMENT_TYPE: ${{ inputs.deployment_type }}
       GITHUB_USERNAME: ${{ inputs.github_username }}
       GITHUB_EMAIL: ${{ inputs.github_email }}
       OPEN_PR: ${{ inputs.open_pr }}
-      BRANCH: ""
-      COMMIT_MESSAGE: ""
+      CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name.csproj  }}
     steps:
-
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Set Branch Name
-        run: |
-          echo "BRANCH=${PUBLIC_NAME}-${DEPLOYMENT_TYPE}" >> $GITHUB_ENV
-          
-      - name: Set up Git and GitHub CLI
-        run: |
-          echo ${{ secrets.DEPLOY_TOKEN }} | gh auth login --with-token
-          echo "GitHub CLI authentication successful."
-          git config --global user.name "${GITHUB_USERNAME}"
-          git config --global user.email "${GITHUB_EMAIL}"
-          echo "Git configuration set for author: ${GITHUB_USERNAME} <${GITHUB_EMAIL}>"
-          
-      - name: Check Current Version in .csproj
-        id: check_version
-        run: |
-          version=$VERSION
-          csproj_path="$PROJECT_DIR/$PROJECT_NAME.csproj"
-          current_version=$(sed -n "s/.*<Version>\(.*\)<\/Version>.*/\1/p" "$csproj_path")
-          if [ "$version" != "$current_version" ]; then
-            echo "version_needs_update=true" >> $GITHUB_OUTPUT
-            echo "CS_PROJ_CHANGED=true" >> $GITHUB_ENV
-          else
-            echo "version_needs_update=false" >> $GITHUB_OUTPUT
+    - name: validate inputs
+      run: |
+        v_change="${VERSION_CHANGE,,}"
+        echo "VERSION_CHANGE=$v_change" >> $GITHUB_ENV
+        if [[ ! " major minor patch " =~ [[:space:]]${v_change}[[:space:]] ]]; then
+          echo "invalid value for version_change: $VERSION_CHANGE"
+          exit 1
+        fi
+        
+        if [[ "v_change" == "none" ]]; then
+          if [[ "$DEPLOYMENT_TYPE" == "testing" ]]; then
+            echo "version_change cannot be 'NONE' for deployment_type 'testing'"
+            exit 1
           fi
-
-      - name: Update .csproj Version
-        if: steps.check_version.outputs.version_needs_update == 'true'
-        run: |
-          version=$VERSION
-          csproj_path="$PROJECT_DIR/$PROJECT_NAME.csproj"
-          sed -i "s/<Version>.*<\/Version>/<Version>$version<\/Version>/" "$csproj_path"
-          echo "Updated .csproj at $csproj_path to version $version"
-
-      - name: Commit .csproj Changes
-        if: env.CS_PROJ_CHANGED == 'true'
-        run: |
-          git add "$PROJECT_DIR/$PROJECT_NAME.csproj"
-          git commit -m "chore(release): update version to v${VERSION}"
-          echo "Committed .csproj changes."
-
-      - name: Push .csproj Version Changes
-        if: env.CS_PROJ_CHANGED == 'true'
-        run: |
-          git push origin HEAD:"${BRANCH}"
-          echo "Pushed .csproj version changes to the repository."
-          
-      - name: Get Dalamud Plugins Repo and Set Up Branch
-        run: |
-          REPO_URL_WITH_TOKEN="https://${{ secrets.DEPLOY_TOKEN }}@github.com/${{ inputs.github_username }}/DalamudPluginsD17.git"
-          git clone "${REPO_URL_WITH_TOKEN}" repo
-          cd repo
-          git remote add pr_repo "https://github.com/goatcorp/DalamudPluginsD17.git"
-          git fetch pr_repo
-          git fetch origin
-          echo "> Configured origin URL with token"
-
-          # Ensure this matches the BRANCH format set by the "Set Branch Name" step
-          if git show-ref --quiet "refs/heads/${BRANCH}"; then
-              echo "> Branch ${BRANCH} already exists, resetting to main"
-              git checkout "${BRANCH}"
-              git reset --hard "pr_repo/main"
-          else
-              echo "> Branch ${BRANCH} does not exist, creating new branch"
-              git reset --hard "pr_repo/main"
-              git checkout -b "${BRANCH}" "pr_repo/main"
+        else
+          if [[ "$DEPLOYMENT_TYPE" == "stable" ]]; then
+            echo "version_change cannot be '$VERSION_CHANGE' for deployment_type 'stable'"
+            exit 1
           fi
-          git push --force --set-upstream origin "${BRANCH}"
-          echo "Branch setup complete for ${BRANCH}."
-          cd ..
+        fi
 
-      - name: Update Deployment Type
-        run: |
-          if [[ "${DEPLOYMENT_TYPE}" == "testing" ]]; then
-            echo "DEPLOYMENT_TYPE=testing/live" >> $GITHUB_ENV
-          fi
-          
-      - name: Create Plugin Manifest Directory
-        run: |
-          COMMIT_MESSAGE="$(echo "$PUBLIC_NAME v$VERSION")"
-          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-          mkdir -p repo/$DEPLOYMENT_TYPE/$INTERNAL_NAME
-          cp -r images repo/$DEPLOYMENT_TYPE/$INTERNAL_NAME
-          cd repo/$DEPLOYMENT_TYPE/$INTERNAL_NAME
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Set up Git and GitHub CLI
+      run: |
+        echo ${{ secrets.DEPLOY_TOKEN }} | gh auth login --with-token
+        echo "GitHub CLI authentication successful."
+        git config --global user.name "${GITHUB_USERNAME}"
+        git config --global user.email "${GITHUB_EMAIL}"
+        echo "Git configuration set for author: ${GITHUB_USERNAME} <${GITHUB_EMAIL}>"
+
+    - name: Determine Version
+      if: inputs.version_change != 'none'
+      run: |
+        version_components=("$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH" | tr . ' ')")
+        component_order=(major minor patch)
+        for i in $(seq 3 -1 0); do
+          [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]]
+          this_component=$?
+          version_components[$i]=$( (( $this_component == 0 )) && echo "$((${version_components[$i]} + 1))" || echo 0)
+          (( $this_component == 0 )) && break
+        done
+        
+        new_version=`echo ${version_components[@]} | tr ' ' .`
+        echo "VERSION=$new_version" >> $GITHUB_ENV
+        echo "new version computed as: $new_version"
+
+    - name: Update .csproj Version
+      run: |
+        sed -i "s:<Version>[^<]*</Version>:<Version>$VERSION</Version>:" "$CSPROJ_PATH"
+        echo "Updated .csproj version at $CSPROJ_PATH from $current_version to $version"
+
+    - name: Commit .csproj Changes
+      run: |
+        git add "$PROJECT_DIR/$PROJECT_NAME.csproj"
+        git commit -m "[release] v${VERSION} (${VERSION_CHANGE})"
+        echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+        echo "Committed .csproj changes."
+
+    - name: Push .csproj Version Changes
+      run: |
+        git push origin
+        echo "Pushed .csproj version changes to the repository."
+
+    - name: Tag release
+      run: |
+        git tag "$VERSION" HEAD
+        git push origin "$VERSION"
+        echo "Pushed .csproj version changes to the repository."
+
+    - name: Get Dalamud Plugins Repo and Set Up Branch
+      run: |
+        REPO_URL_WITH_TOKEN="https://${{ secrets.DEPLOY_TOKEN }}@github.com/${{ inputs.github_username }}/DalamudPluginsD17.git"
+        BRANCH=$(echo "${PUBLIC_NAME}-${DEPLOYMENT_TYPE}" | sed 's:[a-z0-9][A-Z]:\1-\2:g' | tr '[:upper:]' '[:lower:]')
+        git clone "$REPO_URL_WITH_TOKEN" repo
+        cd repo
+        git remote add pr_repo "https://github.com/goatcorp/DalamudPluginsD17.git"
+        git fetch pr_repo
+        git fetch origin
+        echo "> Configured origin URL with token"
+        
+        # Ensure this matches the BRANCH format set by the "Set Branch Name" step
+        if git show-ref --quiet "refs/heads/${BRANCH}"; then
+            echo "> Branch ${BRANCH} already exists, resetting to main"
+            git checkout "${BRANCH}"
+            git reset --hard "pr_repo/main"
+        else
+            echo "> Branch ${BRANCH} does not exist, creating new branch"
+            git checkout -b "${BRANCH}" "pr_repo/main"
+        fi
+        git push --force --set-upstream origin "${BRANCH}"
+        echo "Branch setup complete for ${BRANCH}."
+        cd ..
+
+    - name: compute deploy path
+      run: |
+        if [[ "${DEPLOYMENT_TYPE}" == "stable" ]]; then
+          echo "DEPLOY_PATH=repo/stable/$INTERNAL_NAME" >> $GITHUB_ENV
+        else
+          echo "DEPLOY_PATH=repo/testing/live/$INTERNAL_NAME" >> $GITHUB_ENV
+        fi
+
+    - name: Create Plugin Manifest Directory
+      run: |
+        if [[ ! -d "$DEPLOY_PATH" ]]; then
+          mkdir -p "$DEPLOY_PATH"
           echo "Created manifest directory for $INTERNAL_NAME."
+        else
+          echo "Manifest directory exists."
+        fi
 
-      - name: Check Deployment Type and Version Change
-        id: check_deployment_and_version
-        run: |
-          if [[ "${DEPLOYMENT_TYPE}" == "stable" && "${{ steps.check_version.outputs.version_needs_update }}" == "false" ]]; then
-            echo "copy_toml=true" >> $GITHUB_OUTPUT
-          else
-            echo "copy_toml=false" >> $GITHUB_OUTPUT
-          fi
+    - name: Copy Plugin TOML Manifest from testing to stable
+      if: inputs.deployment_type == 'stable'
+      run: |
+        cp -f "repo/testing/live/${INTERNAL_NAME}/manifest.toml" "repo/stable/${INTERNAL_NAME}/manifest.toml"
+        echo "Copied TOML manifest from testing to stable."
 
-      - name: Copy Plugin TOML Manifest from testing to stable
-        if: steps.check_deployment_and_version.outputs.copy_toml == 'true'
-        run: |
-          cp -f "repo/testing/live/${INTERNAL_NAME}/manifest.toml" "repo/stable/${INTERNAL_NAME}/manifest.toml"
-          echo "Copied TOML manifest from testing to stable."
-          
-      - name: Create Plugin TOML Manifest
-        if: steps.check_deployment_and_version.outputs.copy_toml == 'false'
-        run: |
-          cd repo/$DEPLOYMENT_TYPE/$INTERNAL_NAME
-          echo "[plugin]" > manifest.toml
-          echo "repository = \"${{ github.server_url }}/${{ github.repository }}.git\"" >> manifest.toml
-          echo "owners = [ \"${{ inputs.github_username }}\" ]" >> manifest.toml
-          echo "project_path = \"$PROJECT_NAME\"" >> manifest.toml
-          echo "commit = \"${{ github.sha }}\"" >> manifest.toml
-          echo "Created manifest.toml:"
-          cat manifest.toml
+    - name: Create Plugin TOML Manifest
+      if: inputs.version_change != 'none'
+      run: |
+        cd "$DEPLOY_PATH"
+        if [[ -f manifest.toml ]]; then
+          echo "deleting existing manifest..."
+        fi
+        echo "[plugin]" > manifest.toml
+        echo "repository = \"${{ github.server_url }}/${{ github.repository }}.git\"" >> manifest.toml
+        echo "owners = [ \"${OWNERS//,/\", \"}\" ]" >> manifest.toml
+        echo "project_path = \"$PROJECT_NAME\"" >> manifest.toml
+        echo "commit = \"$COMMIT_SHA\"" >> manifest.toml
+        echo "created manifest.toml:"
+        cat manifest.toml
 
-      - name: Add and Commit Changes
-        run: |
-          cd repo
-          git add --all
-          git commit --all -m "$COMMIT_MESSAGE"
-          echo "Added and committed all changes with message: $COMMIT_MESSAGE"
+    - name: Add and Commit Changes
+      run: |
+        COMMIT_MESSAGE="[$DEPLOYMENT_TYPE] $PUBLIC_NAME v$VERSION"
+        echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+        cd repo
+        git add --all
+        git commit -m "$COMMIT_MESSAGE"
+        echo "Added and committed all changes with message: $COMMIT_MESSAGE"
 
-      - name: Push Changes
-        run: |
-          cd repo
-          git push --force --set-upstream origin "${BRANCH}" -v
-          echo "Pushed changes to branch ${BRANCH}."
-    
-      - name: Open a Pull Request
-        if: ${{ env.OPEN_PR == 'true' }}
-        run: |
-          gh pr create --title "$COMMIT_MESSAGE" --body "Release of $PUBLIC_NAME version $VERSION" --head "${GITHUB_USERNAME}:${BRANCH}" --base main --repo goatcorp/DalamudPluginsD17
-          echo "Opened a PR for $PUBLIC_NAME v$VERSION"
-          
-      - name: Done
-        run: echo "Deploy $DEPLOYMENT_TYPE Done"
+    - name: Push Changes
+      run: |
+        cd repo
+        git push --force --set-upstream origin "${BRANCH}" -v
+        echo "Pushed changes to branch ${BRANCH}."
+
+    - name: Open a Pull Request
+      if: inputs.open_pr == 'true'
+      run: |
+        gh pr create --title "$COMMIT_MESSAGE" --body "Release of $PUBLIC_NAME version $VERSION" --head "${GITHUB_USERNAME}:${BRANCH}" --base main --repo goatcorp/DalamudPluginsD17
+        echo "Opened a PR for $PUBLIC_NAME v$VERSION"
+
+    - name: Done
+      run: echo "Deploy $DEPLOYMENT_TYPE Done"
