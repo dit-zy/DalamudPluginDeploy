@@ -101,7 +101,7 @@ jobs:
       if: inputs.version_change != 'none'
       run: |
         current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
-        version_components=($($current_version | tr . ' '))
+        version_components=($(echo "$current_version" | tr . ' '))
         component_order=(major minor patch)
         for i in $(seq 3 -1 0); do
           [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]] && this_component=true || this_component=false
