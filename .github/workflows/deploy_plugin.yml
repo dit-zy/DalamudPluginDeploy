@@ -138,6 +138,8 @@ jobs:
         if [[ $FORCE_PUSH == true ]]; then
           echo "force pushing: $ref"
           ref="+$ref"
+        else
+          echo "pushing: $ref"
         fi
         git push origin "$ref"
         echo "Pushed .csproj version changes to the repository."
