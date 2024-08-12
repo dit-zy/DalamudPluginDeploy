@@ -63,7 +63,7 @@ jobs:
       GITHUB_USERNAME: ${{ inputs.github_username }}
       GITHUB_EMAIL: ${{ inputs.github_email }}
       OPEN_PR: ${{ inputs.open_pr }}
-      CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name.csproj  }}
+      CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
     steps:
     - name: validate inputs
       run: |
