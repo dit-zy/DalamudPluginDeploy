@@ -106,7 +106,7 @@ jobs:
         component_order=(major minor patch)
         for i in $(seq 3 -1 0); do
           [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]] && this_component=true || this_component=false
-          version_components[$i]=$( (( $this_component == true )) && echo "$((${version_components[$i]} + 1))" || echo 0)
+          version_components[$i]=$([[ $this_component == true ]] && echo "$((${version_components[$i]} + 1))" || echo 0)
           (( $this_component == true )) && break
         done
         
