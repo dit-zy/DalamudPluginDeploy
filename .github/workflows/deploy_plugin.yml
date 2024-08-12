@@ -128,7 +128,7 @@ jobs:
 
     - name: Push .csproj Version Changes
       run: |
-        git push origin
+        git push origin HEAD:${{ github.ref_name }}
         echo "Pushed .csproj version changes to the repository."
 
     - name: Tag release
