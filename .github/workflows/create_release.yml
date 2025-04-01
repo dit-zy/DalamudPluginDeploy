@@ -1,0 +1,146 @@
+﻿name: Create Release
+
+on:
+  workflow_call:
+    inputs:
+      public_name:
+        required: true
+        type: string
+        description: 'the name the user can see'
+      internal_name:
+        required: true
+        type: string
+        description: 'the assembly name'
+      project_dir:
+        required: true
+        type: string
+        description: 'folder containing csproj'
+      project_name:
+        required: true
+        type: string
+        description: 'csproj file name'
+      version_change:
+        required: true
+        type: string
+        description: 'which version component is being incremented (MAJOR, MINOR, PATCH)'
+      github_username:
+        required: true
+        type: string
+        description: 'gitHub username for commits'
+      github_email:
+        required: true
+        type: string
+        description: 'gitHub email for commits'
+      force_push:
+        required: false
+        type: boolean
+        description: 'force push the version change commit?'
+        default: false
+    secrets: 
+      REPO_TOKEN:
+        required: true
+    outputs:
+      new_version:
+        description: 'the new version tagged for this release'
+        value: ${{ jobs.create-release.outputs.new_version }}
+      release_sha:
+        description: 'the commit sha for this release'
+        value: ${{ jobs.create-release.outputs.release_sha }}
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_NAME: ${{ inputs.public_name }}
+      INTERNAL_NAME: ${{ inputs.internal_name }}
+      PROJECT_DIR: ${{ inputs.project_dir }}
+      PROJECT_NAME: ${{ inputs.project_name }}
+      VERSION_CHANGE: ${{ inputs.version_change }}
+      GITHUB_USERNAME: ${{ inputs.github_username }}
+      GITHUB_EMAIL: ${{ inputs.github_email }}
+      FORCE_PUSH: ${{ inputs.force_push }}
+      CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
+    outputs:
+      new_version: ${{ steps.determine-version.outputs.new_version }}
+      release_sha: ${{ steps.capture-sha.outputs.release_sha }}
+    steps:
+    - name: validate inputs
+      run: |
+        v_change="${VERSION_CHANGE,,}"
+        echo "VERSION_CHANGE=$v_change" >> $GITHUB_ENV
+        if [[ ! " major minor patch " =~ [[:space:]]${v_change}[[:space:]] ]]; then
+          echo "invalid value for version_change: $VERSION_CHANGE"
+          exit 1
+        fi
+
+    - name: checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.REPO_TOKEN }}
+
+    - name: set up git
+      run: |
+        git config --global user.name "${GITHUB_USERNAME}"
+        git config --global user.email "${GITHUB_EMAIL}"
+        echo "git configuration set for author: ${GITHUB_USERNAME} <${GITHUB_EMAIL}>"
+
+    - name: determine version
+      id: determine-version
+      run: |
+        current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
+        echo "current version : $current_version"
+        version_components=($(echo "$current_version" | tr . ' '))
+        component_order=(major minor patch)
+        for i in $(seq $((${#version_components[@]} - 1)) -1 0); do
+          if [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]]; then
+            version_components[$i]="$((${version_components[$i]} + 1))"
+            break
+          else
+            version_components[$i]=0
+          fi
+        done
+        
+        new_version=`echo ${version_components[@]} | tr ' ' .`
+        echo "new_version=$new_version" >> $GITHUB_OUTPUT
+        echo "VERSION=$new_version" >> $GITHUB_ENV
+        echo "CURRENT_VERSION=$current_version" >> $GITHUB_ENV
+        echo "new version computed as: $new_version"
+
+    - name: update .csproj version
+      run: |
+        sed -i "s:<Version>[^<]*</Version>:<Version>$VERSION</Version>:" "$CSPROJ_PATH"
+        echo "updated .csproj version at $CSPROJ_PATH from $CURRENT_VERSION to $VERSION"
+
+    - name: commit .csproj changes
+      run: |
+        git add "$PROJECT_DIR/$PROJECT_NAME.csproj"
+        git commit -m "[release] v${VERSION} (${VERSION_CHANGE})"
+        echo "committed .csproj changes."
+
+    - name: push .csproj version change
+      run: |
+        ref="HEAD:${{ github.ref_name }}"
+        if [[ $FORCE_PUSH == true ]]; then
+          echo "force pushing: $ref"
+          ref="+$ref"
+        else
+          echo "pushing: $ref"
+        fi
+        git push origin "$ref"
+        echo "pushed .csproj version changes to the repository."
+
+    - name: tag release
+      run: |
+        git tag "$VERSION" HEAD
+        git push origin "$VERSION"
+        echo "tagged release."
+        
+    - name: capture release sha
+      id: capture-sha
+      run: |
+        echo "release_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: release created
+      run: |
+        echo "new version: ${{ steps.determine-version.outputs.new_version }}"
+        echo "release sha: ${{ steps.capture-sha.outputs.release_sha }}"
