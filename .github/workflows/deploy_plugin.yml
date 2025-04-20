@@ -137,7 +137,8 @@ jobs:
     - name: copy plugin manifest from testing to stable
       if: inputs.deployment_type == 'stable'
       run: |
-        cp -f "$DEPLOY_PATH_LIVE" "$DEPLOY_PATH_STABLE"
+        rm -r "$DEPLOY_PATH_STABLE"
+        cp -r "$DEPLOY_PATH_LIVE" "$DEPLOY_PATH_STABLE"
         echo "copied manifest from testing to stable."
 
     - name: create plugin TOML manifest
