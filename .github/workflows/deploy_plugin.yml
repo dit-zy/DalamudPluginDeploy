@@ -51,8 +51,6 @@ on:
     secrets:
       REPO_TOKEN:
         required: true
-      PR_TOKEN:
-        required: true
         
 env:
   PUBLIC_NAME: ${{ inputs.public_name }}
@@ -182,9 +180,9 @@ jobs:
       if: inputs.open_pr == true
       uses: actions/github-script@v7
       with:
-        github-token: ${{ secrets.PR_TOKEN }}
+        github-token: ${{ secrets.REPO_TOKEN }}
         script: |
-          github.rest.pulls.create({
+          const response = github.rest.pulls.create({
             owner: "goatcorp",
             repo: "DalamudPluginsD17",
             base: "main",
@@ -192,6 +190,8 @@ jobs:
             title: "${{ env.COMMIT_MESSAGE }}",
             body: "Release of ${{ env.PUBLIC_NAME }} version ${{ env.RELEASE_VERSION }}",
           });
+          
+          console.log(response);
 
     - name: done
       run: echo "deploy $DEPLOYMENT_TYPE done"

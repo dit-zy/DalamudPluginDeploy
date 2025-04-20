@@ -17,7 +17,7 @@ It uses a manual dispatch and requires manual versioning but will update the ver
 
 ## Secrets
 
-- `DEPLOY_TOKEN`: Personal Access Token for deployment (required)
+- `REPO_TOKEN`: Personal Access Token for deployment (required)
 
 ## Example Usage
 
