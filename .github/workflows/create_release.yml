@@ -112,4 +112,4 @@ jobs:
       run: |
         release_sha="$(git rev-parse HEAD)"
         echo "release_sha=$release_sha" >> $GITHUB_OUTPUT
-        echo "*release sha*: $release_sha" >> $GITHUB_STEP_SUMMARY
+        echo "**release sha**: $release_sha" >> $GITHUB_STEP_SUMMARY
