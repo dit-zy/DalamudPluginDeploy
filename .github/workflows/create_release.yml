@@ -1,4 +1,4 @@
-﻿name: Create Release
+﻿name: create release
 
 on:
   workflow_call:
@@ -22,7 +22,11 @@ on:
       version_change:
         required: true
         type: string
-        description: 'which version component is being incremented (MAJOR, MINOR, PATCH)'
+        description: 'what type of release this is (MAJOR, MINOR, PATCH)'
+      new_version:
+        required: true
+        type: string
+        description: 'the new version for this release (e.g. 3.4.5)'
       github_username:
         required: true
         type: string
@@ -40,9 +44,6 @@ on:
       REPO_TOKEN:
         required: true
     outputs:
-      new_version:
-        description: 'the new version tagged for this release'
-        value: ${{ jobs.create-release.outputs.new_version }}
       release_sha:
         description: 'the commit sha for this release'
         value: ${{ jobs.create-release.outputs.release_sha }}
@@ -56,23 +57,14 @@ jobs:
       PROJECT_DIR: ${{ inputs.project_dir }}
       PROJECT_NAME: ${{ inputs.project_name }}
       VERSION_CHANGE: ${{ inputs.version_change }}
+      NEW_VERSION: ${{ inputs.new_version }}
       GITHUB_USERNAME: ${{ inputs.github_username }}
       GITHUB_EMAIL: ${{ inputs.github_email }}
       FORCE_PUSH: ${{ inputs.force_push }}
       CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
     outputs:
-      new_version: ${{ steps.determine-version.outputs.new_version }}
       release_sha: ${{ steps.capture-sha.outputs.release_sha }}
     steps:
-    - name: validate inputs
-      run: |
-        v_change="${VERSION_CHANGE,,}"
-        echo "VERSION_CHANGE=$v_change" >> $GITHUB_ENV
-        if [[ ! " major minor patch " =~ [[:space:]]${v_change}[[:space:]] ]]; then
-          echo "invalid value for version_change: $VERSION_CHANGE"
-          exit 1
-        fi
-
     - name: checkout
       uses: actions/checkout@v4
       with:
@@ -84,37 +76,17 @@ jobs:
         git config --global user.email "${GITHUB_EMAIL}"
         echo "git configuration set for author: ${GITHUB_USERNAME} <${GITHUB_EMAIL}>"
 
-    - name: determine version
-      id: determine-version
-      run: |
-        current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
-        echo "current version : $current_version"
-        version_components=($(echo "$current_version" | tr . ' '))
-        component_order=(major minor patch)
-        for i in $(seq $((${#version_components[@]} - 1)) -1 0); do
-          if [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]]; then
-            version_components[$i]="$((${version_components[$i]} + 1))"
-            break
-          else
-            version_components[$i]=0
-          fi
-        done
-        
-        new_version=`echo ${version_components[@]} | tr ' ' .`
-        echo "new_version=$new_version" >> $GITHUB_OUTPUT
-        echo "VERSION=$new_version" >> $GITHUB_ENV
-        echo "CURRENT_VERSION=$current_version" >> $GITHUB_ENV
-        echo "new version computed as: $new_version"
-
     - name: update .csproj version
       run: |
-        sed -i "s:<Version>[^<]*</Version>:<Version>$VERSION</Version>:" "$CSPROJ_PATH"
-        echo "updated .csproj version at $CSPROJ_PATH from $CURRENT_VERSION to $VERSION"
+        ORIG_VERSION="$(sed -nE 's:<Version>([^<]*)</Version>:\1:p' "$CSPROJ_PATH")"
+        echo "ORIG_VERSION='$ORIG_VERSION'" >> $GITHUB_ENV
+        sed -i "s:<Version>[^<]*</Version>:<Version>$NEW_VERSION</Version>:" "$CSPROJ_PATH"
+        echo "updated .csproj version at $CSPROJ_PATH from $ORIG_VERSION to $NEW_VERSION"
 
     - name: commit .csproj changes
       run: |
         git add "$PROJECT_DIR/$PROJECT_NAME.csproj"
-        git commit -m "[release] v${VERSION} (${VERSION_CHANGE})"
+        git commit -m "[release] v${NEW_VERSION} (${VERSION_CHANGE})"
         echo "committed .csproj changes."
 
     - name: push .csproj version change
@@ -131,16 +103,13 @@ jobs:
 
     - name: tag release
       run: |
-        git tag "$VERSION" HEAD
-        git push origin "$VERSION"
+        git tag "$NEW_VERSION" HEAD
+        git push origin "$NEW_VERSION"
         echo "tagged release."
         
     - name: capture release sha
       id: capture-sha
       run: |
-        echo "release_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-    - name: release created
-      run: |
-        echo "new version: ${{ steps.determine-version.outputs.new_version }}"
-        echo "release sha: ${{ steps.capture-sha.outputs.release_sha }}"
+        release_sha="$(git rev-parse HEAD)"
+        echo "release_sha='$release_sha'" >> $GITHUB_OUTPUT
+        echo "*release sha*: $release_sha" >> $GITHUB_STEP_SUMMARY

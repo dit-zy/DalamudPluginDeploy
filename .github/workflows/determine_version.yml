@@ -1,0 +1,72 @@
+﻿name: determine version
+
+on:
+  workflow_call:
+    inputs:
+      project_dir:
+        required: true
+        type: string
+        description: 'folder containing csproj'
+      project_name:
+        required: true
+        type: string
+        description: 'csproj file name'
+      version_change:
+        required: true
+        type: string
+        description: 'which version component is being incremented (MAJOR, MINOR, PATCH), or NONE if the version is just being retrieved'
+    outputs:
+      version:
+        description: 'the new calculated version, or existing version if version_change was NONE'
+        value: ${{ jobs.determine-version.outputs.version }}
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CHANGE: ${{ inputs.version_change }}
+      CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
+    outputs:
+      new_version: ${{ steps.determine-version.outputs.new_version }}
+    steps:
+    - name: validate inputs
+      run: |
+        v_change="${VERSION_CHANGE,,}"
+        echo "VERSION_CHANGE=$v_change" >> $GITHUB_ENV
+        if [[ "$v_change" == "none" ]]; then
+          exit 0
+        fi
+        if [[ ! " major minor patch " =~ [[:space:]]${v_change}[[:space:]] ]]; then
+          echo "invalid value for version_change: $VERSION_CHANGE"
+          exit 1
+        fi
+
+    - name: checkout
+      uses: actions/checkout@v4
+
+    - name: determine version
+      id: determine-version
+      run: |
+        current_version=$(sed -n "s:.*<Version>\([^<]*\)</Version>.*:\1:p" "$CSPROJ_PATH")
+        echo "current version: $current_version"
+        version_components=($(echo "$current_version" | tr . ' '))
+        if [[ "$VERSION_CHANGE" != "none" ]]; then
+          component_order=(major minor patch)
+          for i in $(seq $((${#version_components[@]} - 1)) -1 0); do
+            if [[ "$VERSION_CHANGE" == "${component_order[$i]}" ]]; then
+              version_components[$i]="$((${version_components[$i]} + 1))"
+              break
+            else
+              version_components[$i]=0
+            fi
+          done
+        fi
+        
+        version=`echo ${version_components[@]} | tr ' ' .`
+        echo "# v$version" >> $GITHUB_STEP_SUMMARY
+        echo "version=$version" >> $GITHUB_OUTPUT
+        if [[ "$VERSION_CHANGE" == "none" ]]; then
+          echo "version is: $version"
+        else
+          echo "new version computed as: $version"
+        fi

@@ -28,9 +28,9 @@ on:
         type: string
         description: 'the full sha for the plugin commit to release (only relevant when deployment_type is `testing`)'
       release_version:
-        required: false
+        required: true
         type: string
-        description: 'the version being deployed, e.g. 1.2.6 (only relevant when deployment_type is `testing`)'
+        description: 'the version being deployed, e.g. 1.2.6'
       owners:
         required: false
         type: string
@@ -160,7 +160,7 @@ jobs:
       run: |
         cd "$DEPLOY_PATH"
         if [[ "$DEPLOYMENT_TYPE" == "stable" ]]; then
-          COMMIT_MESSAGE="Promote $PUBLIC_NAME to Stable"
+          COMMIT_MESSAGE="Promote $PUBLIC_NAME v$RELEASE_VERSION to Stable"
         else
           COMMIT_MESSAGE="[Testing] $PUBLIC_NAME v$RELEASE_VERSION"
         fi
@@ -189,7 +189,6 @@ jobs:
             base: "main",
             head: "${{ github.repository_owner }}:${{ env.BRANCH }}",
             title: "${{ env.COMMIT_MESSAGE }}",
-            body: "Release of ${{ env.PUBLIC_NAME }} version ${{ env.RELEASE_VERSION }}",
           });
           
           console.log(response);
