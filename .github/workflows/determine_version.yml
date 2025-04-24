@@ -32,6 +32,7 @@ jobs:
     - name: validate inputs
       run: |
         v_change="${VERSION_CHANGE,,}"
+        echo "'$v_change'"
         echo "VERSION_CHANGE=$v_change" >> $GITHUB_ENV
         if [[ "$v_change" == "none" ]]; then
           exit 0
