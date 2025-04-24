@@ -27,7 +27,7 @@ jobs:
       VERSION_CHANGE: ${{ inputs.version_change }}
       CSPROJ_PATH: ${{ inputs.project_dir }}/${{ inputs.project_name }}.csproj
     outputs:
-      new_version: ${{ steps.determine-version.outputs.new_version }}
+      version: ${{ steps.determine-version.outputs.version }}
     steps:
     - name: validate inputs
       run: |
