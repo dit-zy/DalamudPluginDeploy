@@ -79,7 +79,7 @@ jobs:
     - name: update .csproj version
       run: |
         ORIG_VERSION="$(sed -nE 's:<Version>([^<]*)</Version>:\1:p' "$CSPROJ_PATH")"
-        echo "ORIG_VERSION='$ORIG_VERSION'" >> $GITHUB_ENV
+        echo "ORIG_VERSION=$ORIG_VERSION" >> $GITHUB_ENV
         sed -i "s:<Version>[^<]*</Version>:<Version>$NEW_VERSION</Version>:" "$CSPROJ_PATH"
         echo "updated .csproj version at $CSPROJ_PATH from $ORIG_VERSION to $NEW_VERSION"
 
@@ -111,5 +111,5 @@ jobs:
       id: capture-sha
       run: |
         release_sha="$(git rev-parse HEAD)"
-        echo "release_sha='$release_sha'" >> $GITHUB_OUTPUT
+        echo "release_sha=$release_sha" >> $GITHUB_OUTPUT
         echo "*release sha*: $release_sha" >> $GITHUB_STEP_SUMMARY
